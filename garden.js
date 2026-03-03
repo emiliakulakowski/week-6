@@ -6,7 +6,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
 let canvas;
 let inputBox;
-let currentObject = -1;
+let currentObject = null;
 let mouseDown = false;
 let promptWords = [];
 let ctx;
@@ -180,7 +180,7 @@ function animate() {
                 //ctx.fillStyle = "black";
                 //ctx.font = "30px Arial";
                 //ctx.fillText(thisObject.prompt, position.x, position.y - 30);
-                location.x = Math.max(0, Math.min(location.x, canvas.width - image_size));
+                position.x = Math.max(0, Math.min(position.x, canvas.width - image_size));
                 ctx.drawImage(img, position.x, position.y, image_size, image_size);
             }
             const isHovering =
@@ -247,7 +247,7 @@ async function askPictures(promptWord, location) {
         location: location,
     }
     promptWords.push(promptWord);
-
+   
     document.body.style.cursor = "progress";
     const data = {
         model: "black-forest-labs/flux-schnell",
@@ -275,6 +275,13 @@ async function askPictures(promptWord, location) {
         console.log("Something went wrong, try it again");
     } else {
 
+         // Push to Firebase and get the key
+      const firebaseKey = addImageRemote(
+        json_response.output,
+          promptWord,
+    { x: location.x, y: location.y }
+       );
+
         let img = document.createElement("img");
         //document.body.appendChild(img);
         img.style.position = 'absolute';
@@ -284,13 +291,16 @@ async function askPictures(promptWord, location) {
         img.style.height = '256px';
         img.src = json_response.output;
 
-        addImageRemote(json_response.output, promptWord, { x: location.x, y: location.y });
+        //addImageRemote(json_response.output, promptWord, { x: location.x, y: location.y });
         //don't add it locally, we will get it from firebase addChildAdded callback
     }
     document.body.style.cursor = "auto";
 
     inputBox.style.display = 'block';
     inputBox.value = '';
+
+    // const firebaseKey = addImageRemote(json_response.output, promptWord, { x: location.x, y: location.y });
+    // img.dataset.firebaseKey = firebaseKey;
 }
 
 
@@ -351,54 +361,106 @@ inputBox.addEventListener("blur", () => {
         if (event.key === 'Enter') {
             const inputValue = inputBox.value;
             var rect = inputBox.getBoundingClientRect()
-            let location = { x: rect.left, y: rect.top };
+           let location = {
+            x: canvas.width / 2 - image_size / 2,
+            y: canvas.height / 2 - image_size / 2
+           };
+            //let location = { x: rect.left, y: rect.top };
             console.log("Location: ", location);
             askPictures(inputValue, location);
             //inputBox.style.display = 'none';
         }
     });
 
-
+   //let currentObject = null;
+   let dragPosition = null;  
 
     // Add event listener to the document for mouse down event
     document.addEventListener('mousedown', (event) => {
         mouseDown = true;
         // Check if the mouse is clicked on any of the words
-        currentObject = -1;
+        currentObject = null;
         for (let key in myObjectsByFirebaseKey) {
-            let thisObject = myObjectsByFirebaseKey[key];
-            //need to check if the mouse is over the object using the position and width and height
-            if (event.clientX > thisObject.position.x && event.clientX < thisObject.position.x + image_size && event.clientY > thisObject.position.y && event.clientY < thisObject.position.y + 255) {
-                currentObject = key;
-                break;
-            }
+        const obj = myObjectsByFirebaseKey[key];
+        if (event.clientX > obj.position.x &&
+            event.clientX < obj.position.x + image_size &&
+            event.clientY > obj.position.y &&
+            event.clientY < obj.position.y + image_size
+        ) {
+            currentObject = key; // Firebase key
+            break;
+        }
         }
         console.log("Clicked on ", currentObject);
     });
-
+      //let dragPosition = null;
     document.addEventListener('mousemove', (event) => {
 
           mouseX = event.clientX;
           mouseY = event.clientY;
         //move words around
 
-        if (mouseDown && currentObject != -1) {
+        if (mouseDown && currentObject != null) {
+       
+       dragPosition = { x: mouseX, y: mouseY };
+        myObjectsByFirebaseKey[currentObject].position = dragPosition;
+        // const folder = "sharedImages";
+        // update(ref(db, folder + "/" + currentObject), {
+        //     position: dragPosition
+        // }).catch(err => console.error("Failed to update position:", err));
+    }
 
-            let thisLocation = { x: event.clientX, y: event.clientY };
-            myObjectsByFirebaseKey[currentObject].position = thisLocation;
+        //update(ref(db, "sharedImages/" + currentObject), {
+        //position: thisLocation
+       });
+      }
+    document.addEventListener('mouseup', async (event) => {
+        
+        mouseDown = false;
+
+    if (currentObject && dragPosition) {
+        const user = auth.currentUser;
+        if (!user) {
+            console.error("Cannot update: user not authenticated");
+            currentObject = null;
+            dragPosition = null;
+            return;
         }
 
-    });
-    document.addEventListener('mouseup', (event) => {
-        if (currentObject != -1) {
-            let thisLocation = myObjectsByFirebaseKey[currentObject].position;
-            updateJSONFieldInFirebase(exampleName + "/" + currentObject + "/position/", { x: thisLocation.x, y: thisLocation.y });
+        const folder = "sharedImages";
+
+        // Prepare the object safely
+        const objToUpdate = myObjectsByFirebaseKey[currentObject];
+        if (!objToUpdate) {
+            console.error("Object not found in memory");
+            currentObject = null;
+            dragPosition = null;
+            return;
         }
-        mouseDown = false
 
+        const updateData = {
+            position: { x: dragPosition.x, y: dragPosition.y },
+            authorName: objToUpdate.authorName,
+            type: objToUpdate.type,
+            imageURL: objToUpdate.imageURL,
+            authorId: user.uid  // optional if you use authorId rules
+        };
+
+        try {
+    // Only update the position child node safely
+       await set(ref(db, `${folder}/${currentObject}/position`), { x: dragPosition.x, y: dragPosition.y });
+         console.log("Position updated successfully:", dragPosition);
+        } catch (err) {
+         console.error("Failed to update position:", err);
+          }
+
+        // Reset drag
+        dragPosition = null;
+        currentObject = null;
+    }
 
     });
-}
+
  
 
 
@@ -410,11 +472,12 @@ inputBox.addEventListener("blur", () => {
 export function addImageRemote(imgURL, prompt, pos) {
     const user = auth.currentUser;
     console.log("addImageRemote", imgURL, prompt, pos);
-    const data = { type: "image", prompt: prompt, position: pos, imageURL: imgURL, authorName: user.displayName || user.email };
-    let folder = "sharedImages/";
-    console.log("Entered Image, Send to Firebase", folder, data);
-    const key = addNewThingToFirebase(folder, data);//put empty for the key when you are making a new thing.
-    return key;
+    const data = { type: "image", prompt: prompt, position: pos || { x: canvas.width/2, y: canvas.height/2 }, imageURL: imgURL, authorName: user.displayName || user.email};
+    const folder = "sharedImages";
+    const dbRef = ref(db, folder);
+    const newKey = push(dbRef).key;            // get a new key
+    set(ref(db, folder + "/" + newKey), data); // actually save the data
+    return newKey; 
 }
 
 
@@ -432,26 +495,12 @@ function initFirebaseDB() {
     const app = initializeApp(firebaseConfig);
     db = getDatabase(app);
     auth = getAuth(app);
-    setPersistence(auth, browserSessionPersistence);
     googleAuthProvider = new GoogleAuthProvider();
+    setPersistence(auth, browserSessionPersistence);
 
 }
 
-//  onAuthStateChanged(auth, (user) => {
-//     if (user) {
-//         // User is signed in, see docs for a list of available properties
-//         // https://firebase.google.com/docs/reference/js/auth.user
-//         const uid = user.uid;
-//         console.log("userino is signed in", user);
-//         showLogOutButton(user);
-//         // ...
-//     } else {
-//         console.log("userino is signed out");
-//         showLoginButtons();
-//         // User is signed out
-//         // ...
-//     }
-// });
+ 
 
 function addNewThingToFirebase(folder, data) {
     //firebase will supply the key,  this will trigger "onChildAdded" below
@@ -502,7 +551,10 @@ function subscribeToData() {
         const key = snapshot.key;
         const data = snapshot.val();
 
-        myObjectsByFirebaseKey[key] = data;
+       data.position = data.position || { x: canvas.width/2, y: canvas.height/2 };
+       myObjectsByFirebaseKey[key] = data;
+
+          
 
         if (data.authorName) {
             allAuthors.add(data.authorName);
@@ -510,10 +562,8 @@ function subscribeToData() {
         }
 
         if (data.type === "image") {
-            let img = new Image();
-            img.onload = function () {
-                myObjectsByFirebaseKey[key].loadedImage = img;
-            };
+            const img = new Image();
+            img.onload = () => myObjectsByFirebaseKey[key].loadedImage = img;
             img.src = data.imageURL;
         }
     });
@@ -521,7 +571,12 @@ function subscribeToData() {
     onChildChanged(sharedRef, (snapshot) => {
         const key = snapshot.key;
         const value = snapshot.val();
-        myObjectsByFirebaseKey[key] = value;
+        let existing = myObjectsByFirebaseKey[key];
+
+          myObjectsByFirebaseKey[key] = {
+          ...existing,
+         ...value
+         };
     });
 
     onChildRemoved(sharedRef, (snapshot) => {
@@ -815,3 +870,4 @@ onAuthStateChanged(auth, (user) => {
         createAuthScreen();
     }
 });
+onAuthStateChanged();
