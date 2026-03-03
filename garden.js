@@ -180,7 +180,7 @@ function animate() {
                 //ctx.fillStyle = "black";
                 //ctx.font = "30px Arial";
                 //ctx.fillText(thisObject.prompt, position.x, position.y - 30);
-                position.x = Math.max(0, Math.min(position.x, canvas.width - image_size));
+                location.x = Math.max(0, Math.min(location.x, canvas.width - image_size));
                 ctx.drawImage(img, position.x, position.y, image_size, image_size);
             }
             const isHovering =
