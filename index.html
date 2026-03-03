@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shared Digital Garden</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #backgroundCanvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Background Canvas -->
+    <canvas id="backgroundCanvas"></canvas>
+
+    <!-- Your interactive JS -->
+    <script  src="garden.js" type="module"></script>
+
+    <!-- Background Drawing Script -->
+    <script>
+const bgCanvas = document.getElementById("backgroundCanvas");
+const bgCtx = bgCanvas.getContext("2d");
+
+let clouds = [];
+
+function resizeCanvas() {
+    bgCanvas.width = window.innerWidth;
+    bgCanvas.height = window.innerHeight;
+}
+
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+
+// 🌥 Create Cloud Objects
+function createClouds() {
+    clouds = [];
+    for (let i = 0; i < 6; i++) {
+        clouds.push({
+            x: Math.random() * bgCanvas.width,
+            y: 50 + Math.random() * 150,
+            speed: 0.3 + Math.random() * 0.7,
+            size: 0.8 + Math.random() * 0.6
+        });
+    }
+}
+
+createClouds();
+
+
+// 🌤 Draw Background (static parts)
+function drawStaticBackground() {
+    drawSky();
+    drawTreeLine();
+    drawField();
+}
+
+function drawSky() {
+    bgCtx.fillStyle = "#87CEEB";
+    bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+}
+
+function drawTreeLine() {
+    const baseY = bgCanvas.height * 0.45;
+    bgCtx.fillStyle = "#2E8B57";
+
+    for (let x = 0; x < bgCanvas.width; x += 60) {
+        bgCtx.beginPath();
+        bgCtx.arc(x, baseY, 60, Math.PI, 0);
+        bgCtx.fill();
+    }
+}
+
+function drawField() {
+    bgCtx.fillStyle = "#5FBF5F";
+    bgCtx.fillRect(0, bgCanvas.height * 0.45, bgCanvas.width, bgCanvas.height * 0.55);
+}
+
+
+// ☁️ Draw Single Cloud
+function drawCloud(cloud) {
+    bgCtx.fillStyle = "white";
+    bgCtx.beginPath();
+    bgCtx.arc(cloud.x, cloud.y, 40 * cloud.size, 0, Math.PI * 2);
+    bgCtx.arc(cloud.x + 40 * cloud.size, cloud.y + 10 * cloud.size, 35 * cloud.size, 0, Math.PI * 2);
+    bgCtx.arc(cloud.x - 40 * cloud.size, cloud.y + 10 * cloud.size, 35 * cloud.size, 0, Math.PI * 2);
+    bgCtx.fill();
+}
+
+
+// 🎬 Animation Loop
+function animate() {
+    bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+    drawStaticBackground();
+
+    clouds.forEach(cloud => {
+        cloud.x += cloud.speed;
+
+        // loop cloud back to left side
+        if (cloud.x - 100 > bgCanvas.width) {
+            cloud.x = -100;
+        }
+
+        drawCloud(cloud);
+    });
+
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+
+</body>
+</html>
