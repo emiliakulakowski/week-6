@@ -2,7 +2,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebas
 import { getDatabase, ref, push, update, set, onChildAdded, onChildChanged, onChildRemoved, off } 
 from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
 import { 
-    getAuth,onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,  createUserWithEmailAndPassword,signOut, setPersistence, browserSessionPersistence
+    signInWithRedirect,
+  getRedirectResult,
+  getAuth,onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword,  createUserWithEmailAndPassword,signOut, setPersistence, browserSessionPersistence
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
 let canvas;
 let inputBox;
@@ -23,6 +25,10 @@ let activeUserFilter = null; // null = show all
 let allAuthors = new Set();
 let dropdown = null;
 let dragPosition = null;
+let draggingId = null;
+let offsetX = 0;
+let offsetY = 0;
+let hoverObject = null;
 
 
 
@@ -132,7 +138,7 @@ function createAuthScreen() {
     };
 
     googleBtn.onclick = () => {
-        ssignInWithRedirect(auth, googleAuthProvider)
+        signInWithPopup(auth, googleAuthProvider)
             .catch(err => alert(err.message));
     };
 }
@@ -183,6 +189,8 @@ function animate() {
                 //ctx.fillText(thisObject.prompt, position.x, position.y - 30);
                 const clampedX = Math.max(0, Math.min(position.x, canvas.width - image_size));
                 const clampedY = Math.max(0, Math.min(position.y, canvas.height - image_size));
+                position.x = clampedX;
+                position.y = clampedY;
 
                 ctx.drawImage(img, clampedX, clampedY, image_size, image_size);
             }
@@ -379,39 +387,52 @@ inputBox.addEventListener("blur", () => {
 
     // Add event listener to the document for mouse down event
     document.addEventListener('mousedown', (event) => {
-        mouseDown = true;
-        // Check if the mouse is clicked on any of the words
-        currentObject = null;
-        for (let key in myObjectsByFirebaseKey) {
+         mouseDown = true;
+    currentObject = null;
+
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    for (let key in myObjectsByFirebaseKey) {
         const obj = myObjectsByFirebaseKey[key];
-        if (event.clientX > obj.position.x &&
-            event.clientX < obj.position.x + image_size &&
-            event.clientY > obj.position.y &&
-            event.clientY < obj.position.y + image_size
+
+        if (
+            mouseX > obj.position.x &&
+            mouseX < obj.position.x + image_size &&
+            mouseY > obj.position.y &&
+            mouseY < obj.position.y + image_size
         ) {
-            currentObject = key; // Firebase key
+            currentObject = key;
+
+            // 🔥 calculate offset so image doesn't snap
+            offsetX = mouseX - obj.position.x;
+            offsetY = mouseY - obj.position.y;
+
             break;
         }
-        }
-        console.log("Clicked on ", currentObject);
+    }
+
+    console.log("Clicked on ", currentObject);
     });
       //let dragPosition = null;
     document.addEventListener('mousemove', (event) => {
 
-          mouseX = event.clientX;
-          mouseY = event.clientY;
-        //move words around
+         const rect = canvas.getBoundingClientRect();
 
-        if (mouseDown && currentObject != null) {
-       
-       dragPosition = { x: mouseX, y: mouseY };
-        myObjectsByFirebaseKey[currentObject].position.x = mouseX;
-        myObjectsByFirebaseKey[currentObject].position.y = mouseY;
-        // const folder = "sharedImages";
-        // update(ref(db, folder + "/" + currentObject), {
-        //     position: dragPosition
-        // }).catch(err => console.error("Failed to update position:", err));
-      }
+    // 🔥 update GLOBAL mouse values
+    mouseX = event.clientX - rect.left;
+    mouseY = event.clientY - rect.top;
+
+    if (!mouseDown || !currentObject) return;
+
+    const newX = mouseX - offsetX;
+    const newY = mouseY - offsetY;
+
+    dragPosition = { x: newX, y: newY };
+
+    myObjectsByFirebaseKey[currentObject].position.x = newX;
+    myObjectsByFirebaseKey[currentObject].position.y = newY;
         //position: thisLocation
        });
       
@@ -814,7 +835,7 @@ function showLoginButtons() {
     authDiv.appendChild(signInWithEmailButton);
 
     document.getElementById("signInWithGoogle").addEventListener("click", function (event) {
-        signInWithRedirect(auth, googleAuthProvider)
+        signInWithPopup(auth, googleAuthProvider)
             .then((result) => {
                 // This gives you a Google Access Token. You can use it to access the Google API.
                 const credential = GoogleAuthProvider.credentialFromResult(result);
