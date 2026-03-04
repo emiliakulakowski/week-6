@@ -22,6 +22,7 @@ let mouseY = 0;
 let activeUserFilter = null; // null = show all
 let allAuthors = new Set();
 let dropdown = null;
+let dragPosition = null;
 
 
 
@@ -131,7 +132,7 @@ function createAuthScreen() {
     };
 
     googleBtn.onclick = () => {
-        signInWithPopup(auth, googleAuthProvider)
+        ssignInWithRedirect(auth, googleAuthProvider)
             .catch(err => alert(err.message));
     };
 }
@@ -180,8 +181,10 @@ function animate() {
                 //ctx.fillStyle = "black";
                 //ctx.font = "30px Arial";
                 //ctx.fillText(thisObject.prompt, position.x, position.y - 30);
-                position.x = Math.max(0, Math.min(position.x, canvas.width - image_size));
-                ctx.drawImage(img, position.x, position.y, image_size, image_size);
+                const clampedX = Math.max(0, Math.min(position.x, canvas.width - image_size));
+                const clampedY = Math.max(0, Math.min(position.y, canvas.height - image_size));
+
+                ctx.drawImage(img, clampedX, clampedY, image_size, image_size);
             }
             const isHovering =
             mouseX > position.x &&
@@ -348,11 +351,11 @@ function initInterface() {
 
     inputBox.addEventListener("focus", () => {
     inputBox.style.boxShadow = '0 0 10px rgba(27, 94, 32, 0.4)';
-});
+   });
 
 inputBox.addEventListener("blur", () => {
     inputBox.style.boxShadow = '0 4px 10px rgba(0,0,0,0.15)';
-});
+   });
 
     // Add event listener to the input box
     inputBox.addEventListener('keydown', function (event) {
@@ -372,8 +375,7 @@ inputBox.addEventListener("blur", () => {
         }
     });
 
-   //let currentObject = null;
-   let dragPosition = null;  
+   
 
     // Add event listener to the document for mouse down event
     document.addEventListener('mousedown', (event) => {
@@ -403,22 +405,21 @@ inputBox.addEventListener("blur", () => {
         if (mouseDown && currentObject != null) {
        
        dragPosition = { x: mouseX, y: mouseY };
-        myObjectsByFirebaseKey[currentObject].position = dragPosition;
+        myObjectsByFirebaseKey[currentObject].position.x = mouseX;
+        myObjectsByFirebaseKey[currentObject].position.y = mouseY;
         // const folder = "sharedImages";
         // update(ref(db, folder + "/" + currentObject), {
         //     position: dragPosition
         // }).catch(err => console.error("Failed to update position:", err));
-    }
-
-        //update(ref(db, "sharedImages/" + currentObject), {
+      }
         //position: thisLocation
        });
-      }
-    document.addEventListener('mouseup', async (event) => {
+      
+      document.addEventListener('mouseup', async (event) => {
         
         mouseDown = false;
 
-    if (currentObject && dragPosition) {
+      if (currentObject && dragPosition) {
         const user = auth.currentUser;
         if (!user) {
             console.error("Cannot update: user not authenticated");
@@ -447,7 +448,7 @@ inputBox.addEventListener("blur", () => {
         };
 
         try {
-    // Only update the position child node safely
+      // Only update the position child node safely
        await set(ref(db, `${folder}/${currentObject}/position`), { x: dragPosition.x, y: dragPosition.y });
          console.log("Position updated successfully:", dragPosition);
         } catch (err) {
@@ -457,10 +458,10 @@ inputBox.addEventListener("blur", () => {
         // Reset drag
         dragPosition = null;
         currentObject = null;
-    }
+        }
 
     });
-
+   }    
  
 
 
@@ -481,7 +482,7 @@ export function addImageRemote(imgURL, prompt, pos) {
 }
 
 
-function initFirebaseDB() {
+ async function initFirebaseDB() {
     // Initialize Firebase
     const firebaseConfig = {
         apiKey: "AIzaSyDZMNtQPl-bqPxufr5z8aws6_1nWOPGwMo",
@@ -493,13 +494,45 @@ function initFirebaseDB() {
        appId: "1:422334713781:web:9717c2b43f5b23bdaad3fc"
     };
     const app = initializeApp(firebaseConfig);
+
     db = getDatabase(app);
     auth = getAuth(app);
     googleAuthProvider = new GoogleAuthProvider();
-    setPersistence(auth, browserSessionPersistence);
+
+    await setPersistence(auth, browserSessionPersistence);
+
+    // ✅ MOVE LISTENER HERE
+    onAuthStateChanged(auth, (user) => {
+
+        if (user) {
+
+            console.log("User logged in:", user.email);
+
+            const screen = document.getElementById("authScreen");
+            if (screen) screen.remove();
+
+            exampleName = user.uid;
+
+            showLogOutButton(user);
+
+            init();
+
+        } else {
+
+            console.log("User logged out");
+
+            myObjectsByFirebaseKey = {};
+
+            if (canvas) {
+                canvas.remove();
+            }
+
+            createAuthScreen();
+        }
+    });
 
 }
-
+initFirebaseDB();
  
 
 function addNewThingToFirebase(folder, data) {
@@ -551,7 +584,10 @@ function subscribeToData() {
         const key = snapshot.key;
         const data = snapshot.val();
 
-       data.position = data.position || { x: canvas.width/2, y: canvas.height/2 };
+       if (!data.position) {
+       console.warn("Missing position in Firebase for:", key);
+        return; // Don't render it instead of forcing a new position
+        }
        myObjectsByFirebaseKey[key] = data;
 
           
@@ -778,7 +814,7 @@ function showLoginButtons() {
     authDiv.appendChild(signInWithEmailButton);
 
     document.getElementById("signInWithGoogle").addEventListener("click", function (event) {
-        signInWithPopup(auth, googleAuthProvider)
+        signInWithRedirect(auth, googleAuthProvider)
             .then((result) => {
                 // This gives you a Google Access Token. You can use it to access the Google API.
                 const credential = GoogleAuthProvider.credentialFromResult(result);
@@ -835,39 +871,39 @@ function showLoginButtons() {
     });
 }
 
-initFirebaseDB();
+//initFirebaseDB();
 //createAuthScreen();
 
-onAuthStateChanged(auth, (user) => {
+// onAuthStateChanged(auth, (user) => {
 
-    if (user) {
+//     if (user) {
 
-        console.log("User logged in:", user.email);
+//         console.log("User logged in:", user.email);
 
-        // Remove auth screen if it exists
-        const screen = document.getElementById("authScreen");
-        if (screen) screen.remove();
+//         // Remove auth screen if it exists
+//         const screen = document.getElementById("authScreen");
+//         if (screen) screen.remove();
 
-        exampleName = user.uid;
+//         exampleName = user.uid;
 
-        showLogOutButton(user);
+//         showLogOutButton(user);
 
-        init();
+//         init();
 
-    } else {
+//     } else {
 
-        console.log("User logged out");
+//         console.log("User logged out");
 
-        // Clear canvas objects
-        myObjectsByFirebaseKey = {};
+//         // Clear canvas objects
+//         myObjectsByFirebaseKey = {};
 
-        // Remove garden canvas if it exists
-        if (canvas) {
-            canvas.remove();
-        }
+//         // Remove garden canvas if it exists
+//         if (canvas) {
+//             canvas.remove();
+//         }
 
-        // Show authentication screen again
-        createAuthScreen();
-    }
-});
-onAuthStateChanged();
+//         // Show authentication screen again
+//         createAuthScreen();
+//     }
+// });
+//onAuthStateChanged();
